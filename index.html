@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#2346c8">
+<title>伝票スキャン日計</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brandmark">
+      <h1>伝票スキャン日計</h1>
+      <span class="sync" id="ocrState"><i></i><span>文字認識を準備中…</span></span>
+    </div>
+    <div class="seg" role="group" aria-label="表示">
+      <button type="button" data-view="day" aria-pressed="true">日計</button>
+      <button type="button" data-view="month" aria-pressed="false">月計</button>
+      <button type="button" data-view="settings" aria-pressed="false">設定</button>
+    </div>
+  </header>
+
+  <div class="datebar" id="datebar">
+    <button type="button" class="iconbtn" id="prev" aria-label="前へ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 6l-6 6 6 6"/></svg></button>
+    <input type="date" id="dateInput" aria-label="集計日">
+    <input type="month" id="monthInput" aria-label="集計月" hidden>
+    <button type="button" class="iconbtn" id="next" aria-label="次へ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg></button>
+    <button type="button" class="iconbtn today" id="today">今日</button>
+  </div>
+
+  <!-- 日計・月計 -->
+  <div id="reportView" class="stack">
+    <section class="receipt">
+      <div id="summary" aria-live="polite"></div>
+      <div class="recon" id="recon">
+        <span class="ttl">端末の日計表と照合</span>
+        <div class="row">
+          <label>売上件数<input id="r_count" type="number" inputmode="numeric" min="0" placeholder="例 24"></label>
+          <label>合計金額（取消差引後）<input id="r_amount" type="number" inputmode="numeric" placeholder="例 186400"></label>
+        </div>
+        <div id="reconRes"></div>
+      </div>
+    </section>
+
+    <div class="jobs" id="jobs"></div>
+
+    <section>
+      <div class="sec-h"><h2>ドライバー別</h2><span class="note" id="drvHint"></span></div>
+      <div class="drivers" id="drivers"></div>
+    </section>
+
+    <section id="daySec">
+      <div class="sec-h">
+        <h2 id="listTitle">伝票</h2>
+        <div class="tools">
+          <button type="button" class="btn small" id="checkAll">すべて確認済みに</button>
+          <button type="button" class="btn small" id="csvBtn">CSV保存</button>
+          <button type="button" class="btn small" id="shareBtn" hidden>CSVを送る</button>
+        </div>
+      </div>
+      <div class="filter" id="filter" hidden></div>
+      <div class="list" id="list"></div>
+    </section>
+
+    <section id="monthSec" hidden>
+      <div class="sec-h">
+        <h2>日別</h2>
+        <div class="tools">
+          <button type="button" class="btn small" id="csvMonth">月のCSV保存</button>
+          <button type="button" class="btn small" id="shareMonth" hidden>月のCSVを送る</button>
+        </div>
+      </div>
+      <div class="list tablewrap"><table class="month" id="monthTable"></table></div>
+    </section>
+  </div>
+
+  <!-- 設定 -->
+  <div id="settingsView" class="stack" hidden>
+    <section class="panel">
+      <div class="sec-h"><h2>号車とドライバー</h2><button type="button" class="btn small" id="addCar">行を追加</button></div>
+      <p class="note">号車ごとの担当ドライバーを登録します。スキャンした伝票は号車番号でドライバーに振り分けます。</p>
+      <div id="unknownCars"></div>
+      <div class="cars" id="cars"></div>
+      <div class="acts"><button type="button" class="btn primary" id="saveCars">登録を保存</button></div>
+    </section>
+
+    <section class="panel">
+      <h2>読み取りの設定</h2>
+      <label class="fld">号車番号の見出し（カンマ区切り）<input id="carLabels" autocomplete="off"></label>
+      <p class="note">レシートで号車番号の前に印字されている言葉です。読み取れないときは、レシートの表記をそのまま追加してください。</p>
+      <div class="acts"><button type="button" class="btn" id="saveLabels">保存</button></div>
+    </section>
+
+    <section class="panel">
+      <h2>バックアップ</h2>
+      <p class="note">データはこのスマホの中だけに保存されています。機種変更や故障に備えて、ときどき書き出してパソコンなどに保管してください。</p>
+      <div class="acts">
+        <button type="button" class="btn" id="exportJson">バックアップを書き出す</button>
+        <label class="btn" for="importJson">バックアップから戻す</label>
+        <input class="vh" type="file" id="importJson" accept="application/json,.json">
+      </div>
+      <p class="note" id="storageNote"></p>
+    </section>
+
+    <section class="panel">
+      <h2>このアプリについて</h2>
+      <p class="note">文字認識はスマホの中で行います。インターネットにもClaudeにも接続しません。初回だけ、アプリを開いたときに必要なファイルを保存します。</p>
+      <p class="note" id="versionNote"></p>
+    </section>
+  </div>
+</div>
+
+<div class="dock" id="dock">
+  <div class="in">
+    <label class="side" for="libInput" id="libLbl">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-9 8"/></svg>
+      写真から
+    </label>
+    <label class="scan" id="scanLbl" for="camInput">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span>伝票をスキャン</span>
+    </label>
+    <button type="button" class="side" id="manualBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+      手入力
+    </button>
+  </div>
+  <input class="vh" type="file" id="camInput" accept="image/*" capture="environment">
+  <input class="vh" type="file" id="libInput" accept="image/*" multiple>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <h3 id="sheetTitle">伝票を編集</h3>
+    <img id="sheetImg" class="thumbbig" alt="撮影した伝票" hidden>
+    <form id="editForm" class="grid">
+      <label class="fld">号車<input id="f_car" inputmode="numeric" autocomplete="off" required></label>
+      <label class="fld">ドライバー<input id="f_driver" list="driverList" autocomplete="off"></label>
+      <label class="fld full">金額（円）<input type="number" inputmode="numeric" min="0" step="1" id="f_amount" class="amtin" required></label>
+      <label class="fld">区分<select id="f_type"></select></label>
+      <label class="fld">ブランド<select id="f_brand"></select></label>
+      <label class="fld">集計日<input type="date" id="f_biz" required></label>
+      <label class="fld">伝票の日付<input type="date" id="f_date"></label>
+      <label class="fld">時刻<input type="time" id="f_time"></label>
+      <label class="fld">支払方法<select id="f_pay"></select></label>
+      <label class="fld">承認番号<input id="f_approval" autocomplete="off"></label>
+      <label class="fld">伝票番号<input id="f_slip" inputmode="numeric" autocomplete="off"></label>
+      <label class="fld">端末番号<input id="f_terminal" autocomplete="off"></label>
+      <label class="fld">カード末尾4桁<input id="f_last4" inputmode="numeric" maxlength="4" autocomplete="off"></label>
+      <label class="fld full">メモ<textarea id="f_note"></textarea></label>
+      <label class="checkrow full"><input type="checkbox" id="f_checked"> 確認済み</label>
+    </form>
+    <details id="rawBox" hidden><summary>読み取った文字を見る</summary><pre id="rawText"></pre></details>
+    <div class="sheet-acts">
+      <button type="button" class="btn danger" id="delBtn">削除</button>
+      <div class="r">
+        <button type="button" class="btn" id="cancelBtn">閉じる</button>
+        <button type="button" class="btn primary" id="saveBtn">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+<datalist id="driverList"></datalist>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="vendor/tesseract.min.js"></script>
+<script src="parser.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
