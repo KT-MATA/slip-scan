@@ -1,8 +1,9 @@
 "use strict";
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.1.0";
 const $ = s => document.querySelector(s);
 const { BRANDS, DEFAULT_CAR_LABELS } = window.SlipParser;
-const BRAND_COLOR = {VISA:"var(--c1)",Mastercard:"var(--c2)",JCB:"var(--c3)",AMEX:"var(--c4)",Diners:"var(--c5)","銀聯":"var(--c6)","その他":"var(--c7)"};
+const BRAND_COLOR = {VISA:"var(--c1)",Mastercard:"var(--c2)",JCB:"var(--c3)",AMEX:"var(--c4)",Diners:"var(--c5)","銀聯":"var(--c6)",
+  "交通系IC":"var(--c8)","楽天ペイ":"var(--c9)","d払い":"var(--c9)","PayPay":"var(--c9)","au PAY":"var(--c9)","QRその他":"var(--c9)","その他":"var(--c7)"};
 const TYPES = ["売上","取消","返品"];
 const PAYS = ["一括","分割","リボ","ボーナス","その他"];
 const WD = ["日","月","火","水","木","金","土"];
@@ -75,8 +76,11 @@ function getWorker(){
     workerPath: base + "/worker.min.js", corePath: base, langPath: base,
     workerBlobURL: false, gzip: true,
     logger: m => ocrProgress(m),
+  }, {
+    // 伝票は横書きだけ。縦書きとして読ませると、横向きの写真を誤って読んでしまう
+    textord_tabfind_vertical_text: "0",
   }).then(async w => {
-    await w.setParameters({ tessedit_pageseg_mode: "4", preserve_interword_spaces: "1" });
+    await w.setParameters({ tessedit_pageseg_mode: "3", preserve_interword_spaces: "1", textord_tabfind_vertical_text: "0" });
     setOcrState("文字認識 準備OK（オフライン）", "on");
     return w;
   }).catch(e => {
@@ -121,11 +125,41 @@ function enhance(c){
   g.putImageData(img, 0, 0);
   return c;
 }
+function rotated(src, deg){
+  if(!deg) return src;
+  const c = document.createElement("canvas"), swap = deg % 180 !== 0;
+  c.width = swap ? src.height : src.width; c.height = swap ? src.width : src.height;
+  const g = c.getContext("2d");
+  g.translate(c.width/2, c.height/2); g.rotate(deg * Math.PI / 180);
+  g.drawImage(src, -src.width/2, -src.height/2);
+  return c;
+}
+// 横向き・逆さまに撮った写真でも読めるように、縮小した画像を4方向で試し読みして、
+// 「号車番号」「伝票番号」などの見出しが一番多く読めた向きを使う
+async function detectRotation(w, canvas, j){
+  const k = Math.min(1, 1400 / Math.max(canvas.width, canvas.height));
+  const small = k < 1 ? scaled(canvas, canvas.width, canvas.height, k) : canvas;
+  await w.setParameters({ tessedit_pageseg_mode: "6" });
+  let best = {deg:0, score:-1, text:""};
+  for(const deg of [0, 90, 270, 180]){
+    j.phase = "向きを確認中"; renderJobs();
+    const {data} = await w.recognize(rotated(small, deg));
+    const labels = window.SlipParser.labelScore(data.text);
+    const score = labels * 20 + (data.confidence || 0);
+    if(score > best.score) best = {deg, score, text: data.text};
+    if(labels >= 4 && data.confidence >= 45) break;
+  }
+  return best;
+}
+async function readAs(w, img, psm){
+  await w.setParameters({ tessedit_pageseg_mode: psm });
+  return (await w.recognize(img)).data.text;
+}
 async function prep(file){
   const src = await loadImage(file);
   const w = src.naturalWidth || src.width, h = src.naturalHeight || src.height;
-  // 文字の高さがOCRに向く大きさになるよう、短い辺を1200px前後にそろえる
-  const k = Math.min(2, Math.max(0.2, Math.min(1200 / Math.min(w, h), 2400 / Math.max(w, h))));
+  // 細かい文字がつぶれないよう、長い辺2800pxまでは縮小しない
+  const k = Math.min(2, 2800 / Math.max(w, h), Math.max(1, 1400 / Math.min(w, h)));
   const work = enhance(scaled(src, w, h, k));
   const thumb = scaled(src, w, h, Math.min(1, 520 / Math.max(w, h))).toDataURL("image/jpeg", 0.6);
   if(src.close) src.close();
@@ -148,30 +182,70 @@ async function runJob(j){
   try {
     if(!j.canvas){ const p = await prep(j.file); j.canvas = p.canvas; j.thumb = p.thumb; j.file = null; renderJobs(); }
     const w = await getWorker();
+    const rot = await detectRotation(w, j.canvas, j);
+    const img = rotated(j.canvas, rot.deg);
+    j.phase = "読み取り中"; renderJobs();
     ocrProgress = m => { if(m.status === "recognizing text"){ j.pct = Math.round(m.progress*100); updateJobBar(j); } };
-    const { data } = await w.recognize(j.canvas);
-    ocrProgress = () => {};
-    const r = window.SlipParser.parse(data.text, {carLabels: state.carLabels});
-    if(!r.amount && !r.car && !r.approval){
-      j.status = "error"; j.raw = r.raw;
-      j.msg = "伝票の文字を読み取れませんでした。明るい場所で、伝票をまっすぐ画面いっぱいに撮り直してください。";
+    const opts = {carLabels: state.carLabels, cars: state.cars.map(c => c.car)};
+    let text = await readAs(w, img, "6");
+    const full = text, small = rot.text;
+    // 複数枚並べて撮ると左右の伝票の行が混ざり、金額を取り違えるおそれがあるので保存しない
+    const expected = window.SlipParser.countSlips(text);
+    if(expected > 1){
+      ocrProgress = () => {};
+      j.status = "error"; j.raw = window.SlipParser.normalize(text);
+      j.msg = `伝票が${expected}枚写っているようです。並べて撮ると読み間違えるので、1枚ずつ撮ってください。`;
       renderJobs(); return;
     }
-    const s = {
-      id:newId(), biz:j.biz, car:r.car, driver: carMap()[r.car] || "",
+    let r = window.SlipParser.parse(text, opts);
+    // 読み方を変えると拾える項目が変わるので、欠けた項目は向き確認のときの読み取り結果や、別の読み方で補う
+    if(!r.car || !r.amount || r.confidence === "low"){
+      text = text + "\n" + small;
+      r = window.SlipParser.parse(text, opts);
+    }
+    if(!r.car || !r.amount || r.confidence === "low"){
+      j.phase = "もう一度読み取り中"; j.pct = 0; renderJobs();
+      text = text + "\n" + await readAs(w, img, "4");
+      r = window.SlipParser.parse(text, opts);
+    }
+    ocrProgress = () => {};
+    // 大きさを変えた2回の読み取りで号車・承認番号が食い違ったら、誤読の可能性があるので「要確認」にする
+    const a = window.SlipParser.parse(full, opts), b = window.SlipParser.parse(small, opts);
+    const known = new Set(opts.cars.map(String));
+    if(a.car && b.car && a.car !== b.car){
+      r.confidence = "low";
+      r.car = known.has(b.car) && !known.has(a.car) ? b.car : a.car;
+    }
+    if(a.approval && b.approval && a.approval !== b.approval){
+      r.confidence = "low";
+      r.approval = a.approval.length >= b.approval.length ? a.approval : b.approval;
+    }
+    const found = (r.amount || r.car || r.approval) ? [r] : [];
+    if(!found.length){
+      j.status = "error"; j.raw = window.SlipParser.normalize(text);
+      j.msg = "伝票の文字を読み取れませんでした。明るい場所で、伝票全体がはっきり写るように撮り直してください。";
+      renderJobs(); return;
+    }
+    const map = carMap(), now = Date.now();
+    const saved = found.map((r, i) => ({
+      id:newId(), biz:j.biz, car:r.car, driver: map[r.car] || "",
       amount:r.amount, type:r.type, pay:r.pay, brand:r.brand, date:r.date, time:r.time,
       approval:r.approval, slip:r.slip, terminal:r.terminal, last4:r.last4,
       confidence:r.confidence, missing:r.missing, raw:r.raw, thumb:j.thumb,
-      note:"", checked:false, createdAt:Date.now(), source:"scan",
-    };
-    await DB.put(s);
+      note:"", checked:false, createdAt:now + i, source:"scan",
+    }));
+    await DB.putMany(saved);
     state.jobs = state.jobs.filter(x => x !== j);
     await reload();
-    if(r.missing.includes("号車") || r.missing.includes("金額")){
-      toast(`${r.missing.join("・")}が読めませんでした。入力してください`);
-      openSheet(s, false);
-    } else {
+    const bad = saved.filter(s => !s.car || !s.amount);
+    if(saved.length === 1 && bad.length){
+      toast(`${saved[0].missing.join("・")}が読めませんでした。入力してください`);
+      openSheet(saved[0], false);
+    } else if(saved.length === 1){
+      const s = saved[0];
       toast(`号車${s.car}${s.driver ? "（"+s.driver+"）" : ""} ${yen(sign(s)*s.amount)}`);
+    } else {
+      toast(`${saved.length}枚を読み取りました` + (bad.length ? `（${bad.length}枚は要確認）` : ""));
     }
   } catch(e) {
     ocrProgress = () => {};
@@ -350,7 +424,7 @@ function renderJobs(){
       <div class="txt">
         ${j.status === "error"
           ? `<strong>読み取れませんでした</strong>${esc(j.msg)}<div class="acts">${j.canvas || j.file ? '<button type="button" class="btn small" data-act="retry">再試行</button>' : ""}<button type="button" class="btn small" data-act="manual">手入力する</button><button type="button" class="btn small" data-act="drop">閉じる</button></div>`
-          : `<strong>${j.status === "queued" ? "順番待ち" : "読み取り中…"}</strong>${esc(jpDate(j.biz))}の伝票として登録します<div class="prog"><span style="width:${j.pct}%"></span></div>`}
+          : `<strong>${j.status === "queued" ? "順番待ち" : (j.phase || "読み取り中") + "…"}</strong>${esc(jpDate(j.biz))}の伝票として登録します<div class="prog"><span style="width:${j.pct}%"></span></div>`}
       </div>
       ${j.status !== "error" ? '<div class="spin" aria-hidden="true"></div>' : ""}
     </div>`).join("");

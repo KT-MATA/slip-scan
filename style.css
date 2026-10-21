@@ -3,7 +3,7 @@
   --bg:#eaeef2; --paper:#ffffff; --ink:#16202b; --muted:#5b6978; --line:#d3dae2;
   --accent:#2346c8; --accent-ink:#ffffff; --accent-soft:#e2e8fb;
   --warn:#9a5a00; --warn-soft:#fbeed6; --bad:#b4232f; --bad-soft:#fbe2e4; --good:#1d7a46; --good-soft:#d9f1e3;
-  --c1:#2346c8; --c2:#d0573b; --c3:#1f8a6a; --c4:#7a4fc0; --c5:#b88a12; --c6:#c23f86; --c7:#7b8796;
+  --c1:#2346c8; --c2:#d0573b; --c3:#1f8a6a; --c4:#7a4fc0; --c5:#b88a12; --c6:#c23f86; --c7:#7b8796; --c8:#0f7f99; --c9:#a8432a;
   --shadow:0 1px 2px rgba(20,32,48,.06),0 6px 18px rgba(20,32,48,.07);
   --f-body:"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif;
   --f-mono:"Roboto Mono","Noto Sans Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
@@ -13,7 +13,7 @@
   --bg:#0e131a; --paper:#18212b; --ink:#e5eaf0; --muted:#97a5b4; --line:#2b3644;
   --accent:#86a0ff; --accent-ink:#0b1020; --accent-soft:#1e2a4e;
   --warn:#f0b45a; --warn-soft:#3a2b12; --bad:#ff7d87; --bad-soft:#3d1a20; --good:#62d398; --good-soft:#123324;
-  --c1:#86a0ff; --c2:#f08a6c; --c3:#4fc9a2; --c4:#b394f0; --c5:#e2bb4a; --c6:#ef82bd; --c7:#8d99a8;
+  --c1:#86a0ff; --c2:#f08a6c; --c3:#4fc9a2; --c4:#b394f0; --c5:#e2bb4a; --c6:#ef82bd; --c7:#8d99a8; --c8:#4fc3dc; --c9:#f0926f;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.35); color-scheme:dark;
 }}
 *{box-sizing:border-box}

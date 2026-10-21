@@ -1,6 +1,6 @@
 // オフラインで動かすため、アプリ一式を最初に保存しておく。
 // ファイルを更新したら VERSION を上げると、スマホ側も新しいものに入れ替わる。
-const VERSION = "v1.0.1";
+const VERSION = "v1.1.0";
 const FILES = [
   "./", "index.html", "style.css", "app.js", "parser.js", "manifest.webmanifest",
   "icons/icon-192.png", "icons/icon-512.png",
